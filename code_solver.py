@@ -25,18 +25,13 @@ def screenshot():
     return ImageGrab.grab()
 
 def scroll_and_capture():
-    """Scroll to top, capture frames while scrolling down, stitch together"""
     frames = []
-
-    # scroll to top first
     mouse_ctrl.scroll(0, 50)
     time.sleep(0.5)
 
     prev_frame = None
-    for _ in range(8):  # max 8 scroll steps
+    for _ in range(8):
         img = screenshot()
-        
-        # check if page changed (avoid duplicate frames)
         if prev_frame is not None:
             diff = sum(
                 abs(a - b)
@@ -45,24 +40,18 @@ def scroll_and_capture():
                     prev_frame.resize((32, 32)).tobytes()
                 )
             )
-            if diff < 1000:  # barely changed = end of page
+            if diff < 1000:
                 break
-
         frames.append(img)
         prev_frame = img
-
-        # scroll down
         mouse_ctrl.scroll(0, -5)
         time.sleep(0.4)
 
     if not frames:
         return screenshot()
 
-    # stitch frames vertically
-    # crop overlap between frames to avoid duplicates
     w = frames[0].width
-    crop_h = int(frames[0].height * 0.75)  # keep 75% of each frame
-
+    crop_h = int(frames[0].height * 0.75)
     total_h = crop_h * len(frames) + (frames[0].height - crop_h)
     stitched = Image.new("RGB", (w, total_h))
 
@@ -75,7 +64,6 @@ def scroll_and_capture():
         else:
             stitched.paste(frame, (0, y))
 
-    # resize to reasonable size for API
     max_h = 2000
     if stitched.height > max_h:
         ratio = max_h / stitched.height
@@ -84,7 +72,6 @@ def scroll_and_capture():
     return stitched
 
 def img_to_b64(img):
-    # resize width for API
     img = img.resize((1280, int(img.height * 1280 / img.width)), Image.LANCZOS)
     buf = BytesIO()
     img.save(buf, format="JPEG", quality=85)
@@ -98,14 +85,20 @@ def ask_groq(b64):
         messages=[{"role":"user","content":[
             {"type":"image_url","image_url":{"url":f"data:image/jpeg;base64,{b64}"}},
             {"type":"text","text":(
-                "Look at this screenshot (it may be a stitched image of a scrolled page). "
-                "Find the coding question/problem visible on screen.\n"
-                "Write a complete, working solution in the most appropriate language.\n"
-                "Reply with ONLY the raw code, no explanation, no markdown, no backticks.\n"
+                "Look at this screenshot. It contains a coding assignment or problem.\n\n"
+                "Your job is to produce a COMPLETE, DETAILED, PRODUCTION-READY solution.\n\n"
+                "Rules:\n"
+                "- Output ALL files needed to run the project\n"
+                "- For each file, start with a comment like: // ===== filename.js =====\n"
+                "- Write FULL code for every file, no placeholders, no '...' shortcuts\n"
+                "- Include proper folder structure as comments at the top\n"
+                "- Make the UI look decent with inline styles or tailwind\n"
+                "- All logic must be fully implemented as described\n"
+                "- No explanations outside the code, only code and file comments\n\n"
                 "If no coding question found, reply: NONE"
             )}
         ]}],
-        max_tokens=1024,
+        max_tokens=8000,
     )
     return r.choices[0].message.content.strip()
 
@@ -145,7 +138,7 @@ def on_capture():
     overlay.root.after(0, lambda: overlay.show("Scrolling & capturing..."))
     try:
         img  = scroll_and_capture()
-        overlay.root.after(0, lambda: overlay.show("Solving..."))
+        overlay.root.after(0, lambda: overlay.show("Solving... (may take 10-15s)"))
         b64  = img_to_b64(img)
         code = ask_groq(b64)
         if code == "NONE":
@@ -157,7 +150,7 @@ def on_capture():
         print(f"\n[CODE]\n{code}\n")
     except Exception as e:
         print(f"[ERR] {e}")
-        overlay.root.after(0, lambda: overlay.show("Error"))
+        overlay.root.after(0, lambda: overlay.show(f"Error: {str(e)[:40]}"))
 
 def on_press(key):
     try:
