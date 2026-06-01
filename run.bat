@@ -1,5 +1,4 @@
 @echo off
 set GROQ_API_KEY=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
 start dist\code_solver.exe
-start dist\typer.exe
 pause
